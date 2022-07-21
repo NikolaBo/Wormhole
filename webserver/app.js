@@ -6,7 +6,7 @@ const DEFAULT_PORT = 8000;
 
 const kvStore = new Map();
 
-console.log("Server starting")
+console.log("Server starting");
 app.use(express.json());
 
 app.get("/test", (req, res) => {
@@ -22,6 +22,13 @@ app.post("/put", (req, res) => {
 app.get("/get", (req, res) => {
   res.send(kvStore.get(req.query.key) + "\n");
 });
+
+function shutdown() {
+  console.log("Server shutting down");
+  process.exit(0);
+}
+
+process.on("SIGTERM", shutdown);
 
 const PORT = process.env.PORT || DEFAULT_PORT;
 app.listen(PORT);
