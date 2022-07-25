@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"syscall"
-	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -68,8 +67,28 @@ func webAppExample() error {
 	scanner.Scan()
 
 	fmt.Println("Checkpointing")
-	checkpoint, err := task.Checkpoint(ctx)
+	imageStore := client.ImageService()
+	checkpoint, err := container.Checkpoint(ctx, "examplecheckpoint", []containerd.CheckpointOpts{
+		containerd.WithCheckpointRuntime,
+		containerd.WithCheckpointRW,
+		containerd.WithCheckpointTask,
+	}...)
 	if err != nil {
+		return err
+	}
+	defer imageStore.Delete(ctx, checkpoint.Name())
+
+	if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
+		return err
+	}
+
+	<-exitStatusC
+
+	if _, err = task.Delete(ctx); err != nil {
+		return err
+	}
+
+	if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 		return err
 	}
 
@@ -79,7 +98,13 @@ func webAppExample() error {
 	scanner.Scan()
 
 	fmt.Println("Restoring")
-	demo, err := client.NewContainer(ctx, "demo", containerd.WithNewSnapshot("demo-rootfs", checkpoint))
+
+	demo, err := client.Restore(ctx, "demo", checkpoint, []containerd.RestoreOpts{
+		containerd.WithRestoreImage,
+		containerd.WithRestoreSpec,
+		containerd.WithRestoreRuntime,
+		containerd.WithRestoreRW,
+	}...)
 	if err != nil {
 		return err
 	}
@@ -91,12 +116,18 @@ func webAppExample() error {
 	}
 	defer restoredtask.Delete(ctx)
 
+	exitStatusC, err = restoredtask.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
 	if err := restoredtask.Start(ctx); err != nil {
 		return err
 	}
 	fmt.Println("Restored")
 
-	time.Sleep(2 * time.Second)
+	fmt.Print("Enter to kill:")
+	scanner.Scan()
 
 	if err := restoredtask.Kill(ctx, syscall.SIGKILL); err != nil {
 		return err
