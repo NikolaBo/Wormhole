@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"github.com/containerd/containerd"
@@ -29,7 +30,7 @@ func webAppExample() error {
 
 	ctx := namespaces.WithNamespace(context.Background(), "example")
 
-	image, err := client.Pull(ctx, "docker.io/nikolabo/demowebapp:latest", containerd.WithPullUnpack)
+	image, err := client.Pull(ctx, "docker.io/nikolabo/demowebps:latest", containerd.WithPullUnpack)
 	if err != nil {
 		return err
 	}
@@ -65,18 +66,17 @@ func webAppExample() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Enter to checkpoint:")
 	scanner.Scan()
-
-	fmt.Println("Checkpointing")
-	imageStore := client.ImageService()
-	checkpoint, err := container.Checkpoint(ctx, "examplecheckpoint", []containerd.CheckpointOpts{
-		containerd.WithCheckpointRuntime,
-		containerd.WithCheckpointRW,
-		containerd.WithCheckpointTask,
-	}...)
+	working, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	defer imageStore.Delete(ctx, checkpoint.Name())
+	imagePath := filepath.Join(working, "cr")
+
+	fmt.Println("Checkpointing")
+	_, err = task.Checkpoint(ctx, containerd.WithCheckpointImagePath(imagePath))
+	if err != nil {
+		return err
+	}
 
 	if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
 		return err
@@ -99,18 +99,13 @@ func webAppExample() error {
 
 	fmt.Println("Restoring")
 
-	demo, err := client.Restore(ctx, "demo", checkpoint, []containerd.RestoreOpts{
-		containerd.WithRestoreImage,
-		containerd.WithRestoreSpec,
-		containerd.WithRestoreRuntime,
-		containerd.WithRestoreRW,
-	}...)
+	demo, err := client.NewContainer(ctx, "demo", containerd.WithNewSnapshot("demo", image), containerd.WithNewSpec((oci.WithImageConfig(image))))
 	if err != nil {
 		return err
 	}
 	defer demo.Delete(ctx, containerd.WithSnapshotCleanup)
 
-	restoredtask, err := demo.NewTask(ctx, cio.NullIO, containerd.WithTaskCheckpoint(checkpoint))
+	restoredtask, err := demo.NewTask(ctx, cio.NullIO, containerd.WithRestoreImagePath(imagePath))
 	if err != nil {
 		return err
 	}
@@ -124,12 +119,13 @@ func webAppExample() error {
 	if err := restoredtask.Start(ctx); err != nil {
 		return err
 	}
+
 	fmt.Println("Restored")
 
 	fmt.Print("Enter to kill:")
 	scanner.Scan()
 
-	if err := restoredtask.Kill(ctx, syscall.SIGKILL); err != nil {
+	if err := restoredtask.Kill(ctx, syscall.SIGTERM); err != nil {
 		return err
 	}
 
