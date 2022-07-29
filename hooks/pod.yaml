@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demowebappwithhook
+spec:
+  containers:
+    - name: demowebappwithhook
+      image: nikolabo/demostarthook
+      volumeMounts:
+        - name: persistent-storage
+          mountPath: "/mnt/azure"
+      lifecycle:
+        postStart:
+          exec:
+            command: ["/usr/app/hooks"]
+        preStop:
+          exec:
+            command: ["/usr/app/hooks", "1"]
+  volumes:
+    - name: persistent-storage
+      persistentVolumeClaim:
+        claimName: pvc-azurefile
