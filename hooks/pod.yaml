@@ -4,8 +4,10 @@ metadata:
   name: demowebappwithhook
 spec:
   containers:
-    - name: demowebappwithhook
-      image: nikolabo/demostarthook
+    - name: demowebapp
+      image: nikolabo/demowebapp
+    - name: sidecarhook
+      image: nikolabo/demohooks
       volumeMounts:
         - name: persistent-storage
           mountPath: "/mnt/azure"

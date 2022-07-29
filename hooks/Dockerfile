@@ -1,9 +1,6 @@
-FROM mcr.microsoft.com/cbl-mariner/base/nodejs:16
+FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
 WORKDIR /usr/app
-
-RUN npm install express
-RUN npm install debug
-ADD app.js /usr/app/app.js
+RUN tdnf install coreutils -y
 ADD hooks /usr/app/hooks
-ENTRYPOINT ["node", "app.js"]
+ENTRYPOINT [ "sleep", "infinity" ]
