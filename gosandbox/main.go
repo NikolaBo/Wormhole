@@ -30,7 +30,7 @@ func webAppExample() error {
 
 	ctx := namespaces.WithNamespace(context.Background(), "example")
 
-	image, err := client.Pull(ctx, "docker.io/nikolabo/demowebps:latest", containerd.WithPullUnpack)
+	image, err := client.Pull(ctx, "docker.io/nikolabo/alpineio:latest", containerd.WithPullUnpack)
 	if err != nil {
 		return err
 	}
