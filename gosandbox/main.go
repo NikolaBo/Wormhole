@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"syscall"
 
 	"github.com/containerd/containerd"
@@ -30,7 +29,7 @@ func webAppExample() error {
 
 	ctx := namespaces.WithNamespace(context.Background(), "example")
 
-	image, err := client.Pull(ctx, "docker.io/nikolabo/demowebps:latest", containerd.WithPullUnpack)
+	image, err := client.Pull(ctx, "docker.io/nikolabo/alpineio:latest", containerd.WithPullUnpack)
 	if err != nil {
 		return err
 	}
@@ -38,15 +37,15 @@ func webAppExample() error {
 
 	container, err := client.NewContainer(
 		ctx,
-		"demo-web-app",
-		containerd.WithNewSnapshot("demo-web-app-snapshot", image),
+		"demo-app",
+		containerd.WithNewSnapshot("demo-app-snapshot", image),
 		containerd.WithNewSpec(oci.WithImageConfig(image)),
 	)
 	if err != nil {
 		return err
 	}
 	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
-	log.Printf("Successfully created container with ID %s and snapshot with ID demo-web-app-snapshot", container.ID())
+	log.Printf("Successfully created container with ID %s and snapshot with ID demo-app-snapshot", container.ID())
 
 	task, err := container.NewTask(ctx, cio.NullIO)
 	if err != nil {
@@ -66,17 +65,18 @@ func webAppExample() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Enter to checkpoint:")
 	scanner.Scan()
-	working, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	imagePath := filepath.Join(working, "cr")
 
 	fmt.Println("Checkpointing")
-	_, err = task.Checkpoint(ctx, containerd.WithCheckpointImagePath(imagePath))
+	imageStore := client.ImageService()
+	checkpoint, err := container.Checkpoint(ctx, "examplecheckpoint", []containerd.CheckpointOpts{
+		containerd.WithCheckpointRuntime,
+		containerd.WithCheckpointRW,
+		containerd.WithCheckpointTask,
+	}...)
 	if err != nil {
 		return err
 	}
+	defer imageStore.Delete(ctx, checkpoint.Name())
 
 	if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
 		return err
@@ -99,13 +99,18 @@ func webAppExample() error {
 
 	fmt.Println("Restoring")
 
-	demo, err := client.NewContainer(ctx, "demo", containerd.WithNewSnapshot("demo", image), containerd.WithNewSpec((oci.WithImageConfig(image))))
+	demo, err := client.Restore(ctx, "demo", checkpoint, []containerd.RestoreOpts{
+		containerd.WithRestoreImage,
+		containerd.WithRestoreSpec,
+		containerd.WithRestoreRuntime,
+		containerd.WithRestoreRW,
+	}...)
 	if err != nil {
 		return err
 	}
 	defer demo.Delete(ctx, containerd.WithSnapshotCleanup)
 
-	restoredtask, err := demo.NewTask(ctx, cio.NullIO, containerd.WithRestoreImagePath(imagePath))
+	restoredtask, err := demo.NewTask(ctx, cio.NullIO, containerd.WithTaskCheckpoint(checkpoint))
 	if err != nil {
 		return err
 	}
@@ -119,7 +124,6 @@ func webAppExample() error {
 	if err := restoredtask.Start(ctx); err != nil {
 		return err
 	}
-
 	fmt.Println("Restored")
 
 	fmt.Print("Enter to kill:")
@@ -134,7 +138,7 @@ func webAppExample() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("demo-web-app exited with status: %d\n", code)
+	fmt.Printf("%s exited with status: %d\n", demo.ID(), code)
 
 	return nil
 }
