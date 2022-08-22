@@ -11,7 +11,6 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/oci"
 )
 
 func main() {
@@ -27,79 +26,24 @@ func webAppExample() error {
 	}
 	defer client.Close()
 
-	ctx := namespaces.WithNamespace(context.Background(), "example")
-
-	image, err := client.Pull(ctx, "docker.io/nikolabo/alpineio:latest", containerd.WithPullUnpack)
-	if err != nil {
-		return err
-	}
-	log.Printf("Successfully pulled %s image\n", image.Name())
-
-	container, err := client.NewContainer(
-		ctx,
-		"demo-app",
-		containerd.WithNewSnapshot("demo-app-snapshot", image),
-		containerd.WithNewSpec(oci.WithImageConfig(image)),
-	)
-	if err != nil {
-		return err
-	}
-	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
-	log.Printf("Successfully created container with ID %s and snapshot with ID demo-app-snapshot", container.ID())
-
-	task, err := container.NewTask(ctx, cio.NullIO)
-	if err != nil {
-		return err
-	}
-	defer task.Delete(ctx)
-
-	exitStatusC, err := task.Wait(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := task.Start(ctx); err != nil {
-		return err
-	}
-
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("Enter to checkpoint:")
-	scanner.Scan()
 
-	fmt.Println("Checkpointing")
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+
 	imageStore := client.ImageService()
-	checkpoint, err := container.Checkpoint(ctx, "examplecheckpoint", []containerd.CheckpointOpts{
-		containerd.WithCheckpointRuntime,
-		containerd.WithCheckpointRW,
-		containerd.WithCheckpointTask,
-	}...)
+	image, err := imageStore.Get(ctx, "docker.io/nikolabo/io-checkpoint:latest")
 	if err != nil {
 		return err
 	}
-	defer imageStore.Delete(ctx, checkpoint.Name())
+	checkpoint := containerd.NewImage(client, image)
 
-	if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
-		return err
+	containerName := "demo"
+	argLength := len(os.Args[1:])
+	if argLength != 0 {
+		containerName = os.Args[1]
 	}
 
-	<-exitStatusC
-
-	if _, err = task.Delete(ctx); err != nil {
-		return err
-	}
-
-	if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
-		return err
-	}
-
-	fmt.Println("Checkpoint created")
-
-	fmt.Print("Enter to restore:")
-	scanner.Scan()
-
-	fmt.Println("Restoring")
-
-	demo, err := client.Restore(ctx, "demo", checkpoint, []containerd.RestoreOpts{
+	demo, err := client.Restore(ctx, containerName, checkpoint, []containerd.RestoreOpts{
 		containerd.WithRestoreImage,
 		containerd.WithRestoreSpec,
 		containerd.WithRestoreRuntime,
@@ -116,7 +60,7 @@ func webAppExample() error {
 	}
 	defer restoredtask.Delete(ctx)
 
-	exitStatusC, err = restoredtask.Wait(ctx)
+	exitStatusC, err := restoredtask.Wait(ctx)
 	if err != nil {
 		return err
 	}
