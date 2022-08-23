@@ -7,34 +7,53 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"syscall"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/remotes"
-	"github.com/containerd/containerd/remotes/docker"
-	"github.com/containerd/containerd/remotes/docker/config"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
-var client *containerd.Client
-var ctx context.Context
-
 func main() {
-	fmt.Printf("Attempting to open containerd client connection...\n")
-	var err error
-	client, err = containerd.New("/run/containerd/containerd.sock")
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Fatal(err)
+		panic(err.Error())
 	}
-	defer client.Close()
-	fmt.Printf("Successfully opened containerd client connection!\n")
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+	// get pods in all the namespaces by omitting namespace
+	// Or specify namespace to get pods in particular namespace
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
 
-	ctx = namespaces.WithNamespace(context.Background(), "k8s.io")
+	// Examples for error handling:
+	// - Use helper functions e.g. errors.IsNotFound()
+	// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
+	_, err = clientset.CoreV1().Pods("default").Get(context.TODO(), "example-xxxxx", metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		fmt.Println("Pod example-xxxxx not found in default namespace")
+	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
+		fmt.Printf("Error getting pod %v\n", statusError.ErrStatus.Message)
+	} else if err != nil {
+		panic(err.Error())
+	} else {
+		fmt.Printf("Found example-xxxxx pod in default namespace\n")
+	}
 
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello!\n")
-		fmt.Printf("/hello endpoint accessed\n")
+		fmt.Println("/hello endpoint accessed")
 	})
 
 	http.HandleFunc("/checkpoint", createCheckpoint)
@@ -55,44 +74,13 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	containerId := ids[0]
 
-	container, err := client.LoadContainer(ctx, containerId)
+	cmd := exec.Command("./checkpoint.sh", containerId)
+	stdout, err := cmd.Output()
+	fmt.Println(string(stdout[:]))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
-
-	fmt.Printf("Checkpointing container %s...\n", containerId)
-	imageStore := client.ImageService()
-	checkpoint, err := container.Checkpoint(ctx, "wrmcheckpt", []containerd.CheckpointOpts{
-		containerd.WithCheckpointRuntime,
-		containerd.WithCheckpointRW,
-		containerd.WithCheckpointTask,
-	}...)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer imageStore.Delete(ctx, checkpoint.Name())
-	fmt.Printf("Checkpoint created\n")
-
-	resolver := GetResolver()
-	ropts := []containerd.RemoteOpt{containerd.WithResolver(resolver)}
-
-	err = client.Push(ctx, "docker.io/nikolabo/io-checkpoint:latest", checkpoint.Target(), ropts...)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func GetResolver() remotes.Resolver {
-	options := docker.ResolverOptions{}
-	user := ""
-	access := ""
-	hostOptions := config.HostOptions{}
-	hostOptions.Credentials = func(host string) (string, string, error) {
-		return user, access, nil
-	}
-
-	options.Hosts = config.ConfigureHosts(ctx, hostOptions)
-	return docker.NewResolver(options)
+	fmt.Fprintf(w, "Checkpoint complete\n")
 }
 
 func restoreFromCheckpoint() error {

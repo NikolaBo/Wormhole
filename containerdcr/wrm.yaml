@@ -5,19 +5,17 @@ metadata:
 spec:
   containers:
     - name: wormholeserver
-      command: ["/usr/bin/sh", "-c"]
-      args:
-        - cp /main /host;
-          chroot /host
-          /main
       image: nikolabo/wormhole
       ports:
         - containerPort: 8080
       volumeMounts:
         - name: host
           mountPath: /host
-      securityContext:
-        privileged: true
+      env: 
+      - name: user
+        value: $user
+      - name: access
+        value: $access
   volumes:
     - name: host
       hostPath:
