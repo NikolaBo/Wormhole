@@ -40,6 +40,7 @@ func main() {
 	})
 
 	http.HandleFunc("/checkpoint", createCheckpoint)
+	http.HandleFunc("/restore", restore)
 
 	fmt.Printf("Starting server at port 8080\n")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -115,6 +116,24 @@ func getPodObject() *core.Pod {
 			},
 			NodeName: host,
 		},
+	}
+}
+
+func restore(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("/restore endpoint accessed\n")
+
+	ids, ok := r.URL.Query()["id"]
+	if !ok || len(ids[0]) < 1 {
+		fmt.Fprintf(w, "Url Param 'id' is missing\n")
+		return
+	}
+	containerId := ids[0]
+
+	cmd := exec.Command("./restore.sh", containerId)
+	stdout, err := cmd.Output()
+	fmt.Println(string(stdout[:]))
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 }
 

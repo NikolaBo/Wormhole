@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
- name: wrm
+ name: $name
 spec:
   containers:
     - name: wormholeserver

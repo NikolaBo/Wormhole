@@ -16,6 +16,13 @@ import (
 var ctx context.Context
 
 func main() {
+	argLength := len(os.Args[1:])
+	if argLength != 1 {
+		log.Fatal("wrmcheckpt: missing container id argument")
+	}
+
+	containerId := os.Args[1]
+
 	fmt.Println("Attempting to open containerd client connection...")
 	client, err := containerd.New("/run/containerd/containerd.sock")
 	if err != nil {
@@ -26,12 +33,6 @@ func main() {
 
 	ctx = namespaces.WithNamespace(context.Background(), "k8s.io")
 
-	argLength := len(os.Args[1:])
-	if argLength != 1 {
-		log.Fatal("wrmcheckpt: missing container id argument")
-	}
-
-	containerId := os.Args[1]
 	container, err := client.LoadContainer(ctx, containerId)
 	if err != nil {
 		log.Fatal(err)
