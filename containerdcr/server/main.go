@@ -13,11 +13,15 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
-	"k8s.io/apimachinery/pkg/api/errors"
+	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
+var clientset *kubernetes.Clientset
+var addr string
+var host string
 
 func main() {
 	config, err := rest.InClusterConfig()
@@ -25,30 +29,9 @@ func main() {
 		panic(err.Error())
 	}
 	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err = kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
-	}
-	// get pods in all the namespaces by omitting namespace
-	// Or specify namespace to get pods in particular namespace
-	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-
-	// Examples for error handling:
-	// - Use helper functions e.g. errors.IsNotFound()
-	// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-	_, err = clientset.CoreV1().Pods("default").Get(context.TODO(), "example-xxxxx", metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		fmt.Println("Pod example-xxxxx not found in default namespace")
-	} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-		fmt.Printf("Error getting pod %v\n", statusError.ErrStatus.Message)
-	} else if err != nil {
-		panic(err.Error())
-	} else {
-		fmt.Printf("Found example-xxxxx pod in default namespace\n")
 	}
 
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +45,25 @@ func main() {
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func configure(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("/configure endpoint accessed\n")
+
+	addresses, ok := r.URL.Query()["addr"]
+	if !ok || len(addresses[0]) < 1 {
+		fmt.Fprintf(w, "Url Param 'addr' is missing\n")
+		return
+	}
+	hosts, ok := r.URL.Query()["host"]
+	if !ok || len(hosts[0]) < 1 {
+		fmt.Fprintf(w, "Url Param 'host' is missing\n")
+		return
+	}
+	addr = addresses[0]
+	host = hosts[0]
+
+	fmt.Fprintf(w, "Destination configured\n")
 }
 
 func createCheckpoint(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +82,40 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+
+	// Setup pod definition
+	pod := getPodObject()
+
+	// Deploy pod
+	pod, err = clientset.CoreV1().Pods(pod.Namespace).Create(context.TODO(),
+		pod,
+		metav1.CreateOptions{})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Destination pod created successfully")
+	fmt.Println(pod)
+
 	fmt.Fprintf(w, "Checkpoint complete\n")
+}
+
+func getPodObject() *core.Pod {
+	return &core.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "alprestr",
+			Namespace: "default",
+		},
+		Spec: core.PodSpec{
+			Containers: []core.Container{
+				{
+					Name:            "alpineio",
+					Image:           "nikolabo/alpineio",
+					ImagePullPolicy: core.PullIfNotPresent,
+				},
+			},
+			NodeName: host,
+		},
+	}
 }
 
 func restoreFromCheckpoint() error {
