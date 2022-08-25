@@ -1,18 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
-	"syscall"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/namespaces"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -24,11 +18,11 @@ var addr string
 var host string
 
 func main() {
+	// Configure kube API client
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		panic(err.Error())
 	}
-	// creates the clientset
 	clientset, err = kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
@@ -38,9 +32,9 @@ func main() {
 		fmt.Fprintf(w, "Hello!\n")
 		fmt.Println("/hello endpoint accessed")
 	})
-
 	http.HandleFunc("/checkpoint", createCheckpoint)
 	http.HandleFunc("/restore", restore)
+	http.HandleFunc("/configure", configure)
 
 	fmt.Printf("Starting server at port 8080\n")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -48,6 +42,7 @@ func main() {
 	}
 }
 
+// Set destination hostname and destination wormholeserver address
 func configure(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("/configure endpoint accessed\n")
 
@@ -133,74 +128,7 @@ func restore(w http.ResponseWriter, r *http.Request) {
 	stdout, err := cmd.Output()
 	fmt.Println(string(stdout[:]))
 	if err != nil {
-		log.Fatal(err.Error())
+		fmt.Println(err.Error())
 	}
-}
-
-func restoreFromCheckpoint() error {
-	client, err := containerd.New("/run/containerd/containerd.sock")
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	ctx := namespaces.WithNamespace(context.Background(), "default")
-
-	imageStore := client.ImageService()
-	image, err := imageStore.Get(ctx, "docker.io/nikolabo/io-checkpoint:latest")
-	if err != nil {
-		return err
-	}
-	checkpoint := containerd.NewImage(client, image)
-
-	containerName := "demo"
-	argLength := len(os.Args[1:])
-	if argLength != 0 {
-		containerName = os.Args[1]
-	}
-
-	demo, err := client.Restore(ctx, containerName, checkpoint, []containerd.RestoreOpts{
-		containerd.WithRestoreImage,
-		containerd.WithRestoreSpec,
-		containerd.WithRestoreRuntime,
-		containerd.WithRestoreRW,
-	}...)
-	if err != nil {
-		return err
-	}
-	defer demo.Delete(ctx, containerd.WithSnapshotCleanup)
-
-	restoredtask, err := demo.NewTask(ctx, cio.NullIO, containerd.WithTaskCheckpoint(checkpoint))
-	if err != nil {
-		return err
-	}
-	defer restoredtask.Delete(ctx)
-
-	exitStatusC, err := restoredtask.Wait(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := restoredtask.Start(ctx); err != nil {
-		return err
-	}
-	fmt.Println("Restored")
-
-	fmt.Print("Enter to kill:")
-	scanner.Scan()
-
-	if err := restoredtask.Kill(ctx, syscall.SIGTERM); err != nil {
-		return err
-	}
-
-	status := <-exitStatusC
-	code, _, err := status.Result()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s exited with status: %d\n", demo.ID(), code)
-
-	return nil
+	fmt.Fprintf(w, "Restore complete\n")
 }

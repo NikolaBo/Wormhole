@@ -61,6 +61,7 @@ func main() {
 	fmt.Println("Checkpoint uploaded to remote")
 }
 
+// Sets up resolver with credentials to push to dockerhub
 func GetResolver() remotes.Resolver {
 	options := docker.ResolverOptions{}
 	user := os.Getenv("user")
