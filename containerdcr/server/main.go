@@ -14,8 +14,8 @@ import (
 )
 
 var clientset *kubernetes.Clientset
-var addr string
-var host string
+var addr string = ""
+var host string = ""
 
 func main() {
 	// Configure kube API client
@@ -32,7 +32,7 @@ func main() {
 		fmt.Fprintf(w, "Hello!\n")
 		fmt.Println("/hello endpoint accessed")
 	})
-	http.HandleFunc("/checkpoint", createCheckpoint)
+	http.HandleFunc("/migrate", createCheckpoint)
 	http.HandleFunc("/restore", restore)
 	http.HandleFunc("/configure", configure)
 
@@ -65,6 +65,11 @@ func configure(w http.ResponseWriter, r *http.Request) {
 func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("/checkpoint endpoint accessed\n")
 
+	if addr == "" || host == "" {
+		fmt.Fprintf(w, "Destination not configured\n")
+		return
+	}
+
 	ids, ok := r.URL.Query()["id"]
 	if !ok || len(ids[0]) < 1 {
 		fmt.Fprintf(w, "Url Param 'id' is missing\n")
@@ -87,12 +92,33 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		pod,
 		metav1.CreateOptions{})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	fmt.Println("Destination pod created successfully")
 	fmt.Println(pod)
 
-	fmt.Fprintf(w, "Checkpoint complete\n")
+	clientset.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), "alpineio", metav1.DeleteOptions{})
+
+	// Wait for destination container to be created
+	for pod.Status.Phase == core.PodPending {
+		pod, err = clientset.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	if pod.Status.Phase != core.PodRunning {
+		log.Fatal("Invalid pod status " + pod.Status.Phase)
+	}
+
+	id := pod.Status.ContainerStatuses[0].ContainerID
+	id = id[13:len(id)] // cut off prefix "containerd://"
+
+	_, err = http.Get(addr + "/restore?id=" + id)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Fprintf(w, "Migration complete\n")
 }
 
 func getPodObject() *core.Pod {
