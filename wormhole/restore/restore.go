@@ -21,13 +21,15 @@ import (
 )
 
 var ctx context.Context
+
+// Regex rules for pod-specific resources
 var rules = []string{
-	`/pods/(.*)/etc-hosts`,
-	`/workload/(.*)"`,
-	`/sandboxes/(.*)/`,
-	`access-(.*)"`,
-	`/besteffort/.*/(.*)"`,
-	`/proc/(.*)/ns/`}
+	`/pods/(.*)/etc-hosts`, // pod uid
+	`/workload/(.*)"`,      // termination log id
+	`/sandboxes/(.*)/`,     // cri pod sandbox id
+	`access-(.*)"`,         // kube api access id
+	`/besteffort/.*/(.*)"`, // container id
+	`/proc/(.*)/ns/`}       // pod namesace pid
 
 func main() {
 	containerName := "alprestr"
@@ -49,6 +51,7 @@ func main() {
 
 	ctx = namespaces.WithNamespace(context.Background(), "k8s.io")
 
+	// Pull image
 	image := imagePull(ctx, client)
 	fmt.Printf("Successfully pulled %s image\n\n", image.Name())
 
@@ -60,21 +63,19 @@ func main() {
 	}
 	re := regexp.MustCompile(`checkpoint\.config[^:]*:[^:]*:([^"]*)"`)
 	specDigest := string(re.FindSubmatch(manifest)[1])
-
 	specPath := "/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/" + specDigest
 
 	spec, err := ioutil.ReadFile(specPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	stat, err := os.Stat(specPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fileSize := stat.Size()
 
-	// Extract spec of target pod container
+	// Extract spec of destination pod container
 	container, err := client.LoadContainer(ctx, containerId)
 	if err != nil {
 		log.Fatal(err)
@@ -99,7 +100,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "can't marshal %+v as a JSON string: %v\n", x, err)
 	}
 
-	// Modify spec to match new pod namespaces and mounts/cgroup
+	// Modify spec to match new pod external resources
 	for _, exp := range rules {
 		re = regexp.MustCompile(exp)
 		new := re.FindSubmatch(in)[1]
@@ -107,14 +108,15 @@ func main() {
 		spec = []byte(strings.ReplaceAll(string(spec), string(old), string(new)))
 	}
 
+	// If modified spec is shorter, add whitespace bytes
+	// Needed to satisfy containerd image parsing
 	for len(spec) < int(fileSize) {
 		spec = []byte(string(spec) + " ")
 	}
-
 	ioutil.WriteFile("/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/"+specDigest, spec, fs.ModeTemporary)
 
+	// Restore container from checkpoint
 	checkpoint := image
-
 	restored, err := client.Restore(ctx, containerName, checkpoint, []containerd.RestoreOpts{
 		containerd.WithRestoreImage,
 		containerd.WithRestoreSpec,
@@ -137,6 +139,8 @@ func main() {
 	fmt.Println("Restored")
 }
 
+// Fetch and unpack checkpoint image from container registry
+// Based on implementation in containerd ctr cli: https://github.com/containerd/containerd/blob/1bb39b833e26a6dc7435fcec8ded44a04b3827f7/cmd/ctr/commands/images/pull.go#L70
 func imagePull(ctx context.Context, client *containerd.Client) containerd.Image {
 	image, err := client.Fetch(ctx, "docker.io/nikolabo/io-checkpoint:latest")
 	if err != nil {

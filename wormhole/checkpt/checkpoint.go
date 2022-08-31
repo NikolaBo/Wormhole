@@ -33,11 +33,11 @@ func main() {
 
 	ctx = namespaces.WithNamespace(context.Background(), "k8s.io")
 
+	// Create container checkpoint
 	container, err := client.LoadContainer(ctx, containerId)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	fmt.Printf("Checkpointing container %s...\n", containerId)
 	imageStore := client.ImageService()
 	checkpoint, err := container.Checkpoint(ctx, "wrmcheckpt", []containerd.CheckpointOpts{
@@ -51,9 +51,9 @@ func main() {
 	defer imageStore.Delete(ctx, checkpoint.Name())
 	fmt.Println("Checkpoint created")
 
+	// Push checkpoint image
 	resolver := GetResolver()
 	ropts := []containerd.RemoteOpt{containerd.WithResolver(resolver)}
-
 	err = client.Push(ctx, "docker.io/nikolabo/io-checkpoint:latest", checkpoint.Target(), ropts...)
 	if err != nil {
 		log.Fatal(err)
@@ -61,7 +61,7 @@ func main() {
 	fmt.Println("Checkpoint uploaded to remote")
 }
 
-// Sets up resolver with credentials to push to dockerhub
+// Sets up resolver with credentials from environment variables to push to dockerhub
 func GetResolver() remotes.Resolver {
 	options := docker.ResolverOptions{}
 	user := os.Getenv("user")

@@ -28,6 +28,7 @@ func main() {
 		panic(err.Error())
 	}
 
+	// Set up http server
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello!\n")
 		fmt.Println("/hello endpoint accessed")
@@ -62,6 +63,7 @@ func configure(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Destination configured\n")
 }
 
+// Migration endpoint handler
 func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("/checkpoint endpoint accessed\n")
 
@@ -77,6 +79,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	containerId := ids[0]
 
+	// Execute checkpoint helper on host
 	cmd := exec.Command("./checkpoint.sh", containerId)
 	stdout, err := cmd.Output()
 	fmt.Println(string(stdout[:]))
@@ -84,20 +87,18 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err.Error())
 	}
 
-	// Setup pod definition
 	pod := getPodObject()
 
+	// Delete source workload
 	clientset.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), "workload", metav1.DeleteOptions{})
 
-	// Deploy pod
-	pod, err = clientset.CoreV1().Pods(pod.Namespace).Create(context.TODO(),
+	_, err = clientset.CoreV1().Pods(pod.Namespace).Create(context.TODO(),
 		pod,
 		metav1.CreateOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Destination pod created successfully")
-	fmt.Println(pod)
 
 	// Wait for destination container to be created
 	for pod.Status.Phase == core.PodPending {
@@ -110,9 +111,11 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("Invalid pod status " + pod.Status.Phase)
 	}
 
+	// Create destination pod
 	id := pod.Status.ContainerStatuses[0].ContainerID
 	id = id[13:len(id)] // cut off prefix "containerd://"
 
+	// Restore
 	_, err = http.Get(addr + "/restore?id=" + id)
 	if err != nil {
 		log.Fatal(err)
@@ -121,6 +124,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Migration complete\n")
 }
 
+// Setup pod definition
 func getPodObject() *core.Pod {
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,6 +144,7 @@ func getPodObject() *core.Pod {
 	}
 }
 
+// Restore endpoint handler
 func restore(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("/restore endpoint accessed\n")
 
@@ -150,6 +155,7 @@ func restore(w http.ResponseWriter, r *http.Request) {
 	}
 	containerId := ids[0]
 
+	// Execute restore helper on host
 	cmd := exec.Command("./restore.sh", containerId)
 	stdout, err := cmd.Output()
 	fmt.Println(string(stdout[:]))
