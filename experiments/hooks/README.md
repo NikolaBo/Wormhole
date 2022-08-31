@@ -1,0 +1,2 @@
+## Container Lifecycle Hooks Pod
+Exploration of potential to use container lifecycle hooks to initiate migration and AzureFile for persistent storage of checkpoints across hosts. Not used in Wormhole demo, which initiates migration manually and stores checkpoint images in a container registry.  
