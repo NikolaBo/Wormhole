@@ -7,3 +7,5 @@ Wormhole pods are deployed on the source and destination nodes to enable migrati
 A toy file I/O Go application for demonstrating the transfer of container state between nodes.
 ### Experiments
 Explorations of potential aspects of the live migration workflow.
+### Kernel
+Wormhole live migration requires an AKS cluster with a [Mariner kernel compiled with options to enable CRIU](https://github.com/microsoft/CBL-Mariner/pull/3300). CRIU must also be installed on the cluster nodes.
