@@ -1,0 +1,2 @@
+## Wormhole Restore
+This utility is a containerd client. It connects to containerd, fetches and unpacks a checkpoint image, modifies the OCI spec in the image to match the pod-level resources found in the destination container's spec.

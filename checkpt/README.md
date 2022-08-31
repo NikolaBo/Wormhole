@@ -1,0 +1,2 @@
+## Wormhole Checkpoint
+This utility is a containerd client. It connects to containerd, finds a specified container, creates a checkpoint of the container's state, and uploads that checkpoint to a container registry. 
