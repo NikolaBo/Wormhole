@@ -87,6 +87,8 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	// Setup pod definition
 	pod := getPodObject()
 
+	clientset.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), "workload", metav1.DeleteOptions{})
+
 	// Deploy pod
 	pod, err = clientset.CoreV1().Pods(pod.Namespace).Create(context.TODO(),
 		pod,
@@ -96,8 +98,6 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Println("Destination pod created successfully")
 	fmt.Println(pod)
-
-	clientset.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), "alpineio", metav1.DeleteOptions{})
 
 	// Wait for destination container to be created
 	for pod.Status.Phase == core.PodPending {
@@ -124,13 +124,13 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 func getPodObject() *core.Pod {
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "alprestr",
+			Name:      "restored",
 			Namespace: "default",
 		},
 		Spec: core.PodSpec{
 			Containers: []core.Container{
 				{
-					Name:            "alpineio",
+					Name:            "workload",
 					Image:           "nikolabo/alpineio",
 					ImagePullPolicy: core.PullIfNotPresent,
 				},

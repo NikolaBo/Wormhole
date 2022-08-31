@@ -23,14 +23,14 @@ import (
 var ctx context.Context
 var rules = []string{
 	`/pods/(.*)/etc-hosts`,
-	`/alpineio/(.*)"`,
+	`/workload/(.*)"`,
 	`/sandboxes/(.*)/`,
 	`access-(.*)"`,
 	`/besteffort/.*/(.*)"`,
 	`/proc/(.*)/ns/`}
 
 func main() {
-	containerName := "alpineio"
+	containerName := "alprestr"
 	argLength := len(os.Args[1:])
 	if argLength == 2 {
 		containerName = os.Args[2]
@@ -61,10 +61,18 @@ func main() {
 	re := regexp.MustCompile(`checkpoint\.config[^:]*:[^:]*:([^"]*)"`)
 	specDigest := string(re.FindSubmatch(manifest)[1])
 
-	spec, err := ioutil.ReadFile("/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/" + specDigest)
+	specPath := "/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/" + specDigest
+
+	spec, err := ioutil.ReadFile(specPath)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	stat, err := os.Stat(specPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fileSize := stat.Size()
 
 	// Extract spec of target pod container
 	container, err := client.LoadContainer(ctx, containerId)
@@ -98,6 +106,11 @@ func main() {
 		old := re.FindSubmatch(spec)[1]
 		spec = []byte(strings.ReplaceAll(string(spec), string(old), string(new)))
 	}
+
+	for len(spec) < int(fileSize) {
+		spec = []byte(string(spec) + " ")
+	}
+
 	ioutil.WriteFile("/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/"+specDigest, spec, fs.ModeTemporary)
 
 	checkpoint := image
