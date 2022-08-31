@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	writeInterval := 10
+	writeInterval := 5
 	argLength := len(os.Args[1:])
 	if argLength != 0 {
 		var err error
@@ -21,7 +21,7 @@ func main() {
 	counter := 0
 	for true {
 		counter++
-		filename := strconv.Itoa(counter) + ".txt"
+		filename := strconv.Itoa(counter)
 
 		f, err := os.Create(filename)
 		if err != nil {

@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+ name: $name
+spec:
+  containers:
+    - name: wormholeserver
+      image: nikolabo/wormhole
+      ports:
+        - containerPort: 8080
+      volumeMounts:
+        - name: host
+          mountPath: /host
+      env: 
+      - name: user
+        value: $user
+      - name: access
+        value: $access
+  volumes:
+    - name: host
+      hostPath:
+        path: /
+        type: Directory
+  nodeSelector:
+    kubernetes.io/hostname: $hostname
+  hostIPC: true
+  hostNetwork: true
+  hostPID: true
